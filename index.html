@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VAA — vLLM Ascend Adaptation Board</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#">
+        <span class="brand-mark">VAA</span>
+        <span class="brand-text">
+          <span class="brand-title" data-i18n="brandTitle">VAA</span>
+          <span class="brand-sub" data-i18n="brandSub">Ascend Adaptation</span>
+        </span>
+      </a>
+      <nav class="nav">
+        <a id="linkProject" class="nav-link" href="#" target="_blank" rel="noopener" data-i18n="officialWebsite">项目仓库</a>
+        <a id="linkReference" class="nav-link" href="https://chongweiliu.github.io/slai-ascend-auto-adapt/dashboard/" target="_blank" rel="noopener">SLAI</a>
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn active" data-lang="zh">中</button>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="hero">
+      <h1 data-i18n="headerTitle">vLLM Ascend 适配看板</h1>
+      <p class="hero-desc" data-i18n="headerDesc">跟踪适配、Benchmark 与性能优化流水线状态（数据来自 vllm_board.db 导出）。</p>
+      <p class="meta-line">
+        <span data-i18n="lastUpdated">最后更新</span>:
+        <time id="lastUpdated">—</time>
+      </p>
+      <div class="toolbar">
+        <label class="sort-label">
+          <span data-i18n="sortLabel">排序</span>:
+          <select id="sortSelect" class="sort-select">
+            <option value="newest" data-i18n="sortNewestFirst">最新优先</option>
+            <option value="oldest" data-i18n="sortOldestFirst">最旧优先</option>
+            <option value="nameAz" data-i18n="sortNameAz">名称 A–Z</option>
+            <option value="nameZa" data-i18n="sortNameZa">名称 Z–A</option>
+            <option value="status" data-i18n="sortByStatus">按适配状态</option>
+            <option value="durLong" data-i18n="sortDurationLongest">耗时最长</option>
+            <option value="durShort" data-i18n="sortDurationShortest">耗时最短</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="teamTitle">
+      <h2 id="teamTitle" data-i18n="teamTitle">团队</h2>
+      <p class="panel-desc" data-i18n="teamDesc">Agent 心跳与当前任务（由 board_ops heartbeat 写入）。</p>
+      <div id="teamGrid" class="team-grid"></div>
+      <p id="noAgents" class="empty-hint hidden" data-i18n="noActiveAgents">暂无 Agent 记录</p>
+    </section>
+
+    <section class="panel" aria-labelledby="statsTitle">
+      <h2 id="statsTitle" data-i18n="statsTitle">统计</h2>
+      <p class="panel-desc" data-i18n="statsDesc">基于当前模型列表聚合。</p>
+      <div id="statsGrid" class="stats-grid"></div>
+      <div class="legend" id="pipelineLegend"></div>
+    </section>
+
+    <section class="panel models-section" aria-labelledby="modelsTitle">
+      <h2 id="modelsTitle" data-i18n="modelsHeading">模型</h2>
+      <p class="panel-desc" data-i18n="modelsDesc">适配任务与流水线阶段（数据来自导出 JSON）。</p>
+      <div id="modelsGrid" class="models-grid"></div>
+      <p id="loading" class="loading" data-i18n="loading">加载中…</p>
+      <p id="noResults" class="empty-hint hidden" data-i18n="noResults">无模型数据</p>
+      <div id="pager" class="pager hidden">
+        <button type="button" id="prevPage" class="btn-ghost" data-i18n="prevPage">上一页</button>
+        <span id="pageIndicator" class="page-indicator">1 / 1</span>
+        <button type="button" id="nextPage" class="btn-ghost" data-i18n="nextPage">下一页</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p class="footer-tagline" data-i18n="footerTagline">在昇腾 NPU 上加速大模型推理</p>
+    <p class="footer-copy">© <span id="year"></span> VAA</p>
+    <details class="disclaimer">
+      <summary data-i18n="disclaimerTitle">免责声明</summary>
+      <p data-i18n="disclaimer">本看板为开发协作状态展示，指标与日志请以实际评测与仓库文档为准。</p>
+    </details>
+  </footer>
+
+  <script src="js/dashboard.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "qwen3_5_0_8b": {
+    "throughput_npu": "2417 tok/s (TP2)",
+    "latency_npu": "—",
+    "memory_usage_npu": "—",
+    "optimization": {
+      "speedup": 1.12,
+      "optimizations": "cudagraph FULL_DECODE_ONLY",
+      "baseline_latency_s": 0.0414,
+      "perf_latency_s": 0.0369,
+      "latency_reduction_pct": 13.2,
+      "cosine_similarity": 0.9999
+    }
+  }
+}

@@ -1,0 +1,2 @@
+# 本地可选指标（不强制忽略；若含敏感数据可取消注释）
+# data/metrics_overrides.json

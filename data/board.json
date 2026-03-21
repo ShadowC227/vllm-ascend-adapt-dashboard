@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "title": "VAA",
+    "subtitle": "vLLM Ascend Adaptation",
+    "lastUpdated": "2026-03-21T01:49Z",
+    "projectUrl": "https://github.com/ShadowC227/vllm-ascend-adapt",
+    "referenceUrl": "https://chongweiliu.github.io/slai-ascend-auto-adapt/dashboard/"
+  },
+  "agents": [
+    {
+      "id": "vllm-adapter-1",
+      "last_heartbeat": "2026-03-20 07:35:14",
+      "status": "active",
+      "current_task": "qwen3_5_0_8b",
+      "name": "vLLM Adapter",
+      "roleKey": "roleAdapter",
+      "badge": {
+        "text": "ADAPT",
+        "variant": "primary"
+      }
+    },
+    {
+      "id": "vllm-benchmark-runner-1",
+      "last_heartbeat": "2026-03-21 01:41:06",
+      "status": "active",
+      "current_task": "benchmark: qwen3_5_2b baseline TP1",
+      "name": "Benchmark Runner",
+      "roleKey": "roleBenchmark",
+      "badge": {
+        "text": "BENCH",
+        "variant": "info"
+      }
+    },
+    {
+      "id": "vllm-performance-optimizer-1",
+      "last_heartbeat": "2026-03-20 07:35:14",
+      "status": "idle",
+      "current_task": "",
+      "name": "Performance Optimizer",
+      "roleKey": "roleOptimizer",
+      "badge": {
+        "text": "OPT",
+        "variant": "success"
+      }
+    }
+  ],
+  "models": [
+    {
+      "model_id": "qwen3_5_0_8b",
+      "source": "huggingface",
+      "priority": "high",
+      "status": "completed",
+      "started_at": "2026-03-20 07:30:29",
+      "last_updated": "2026-03-20 07:30:29",
+      "failure_reason": "",
+      "url": "",
+      "description": "Qwen3.5-0.8B (Qwen3_5ForConditionalGeneration), hybrid attention+mamba",
+      "notes": "adapted on Ascend 910, vllm 0.17.1rc1",
+      "adaptation_path": "adaptations/qwen3_5_0_8b",
+      "owner": "",
+      "benchmark_status": "completed",
+      "benchmark_started_at": "",
+      "benchmark_last_updated": "2026-03-20 07:30:29",
+      "benchmark_owner": "",
+      "benchmark_notes": "TP1/2/4 baseline+optimized with warmup, A100 comparison in benchmarks/README.md",
+      "optimization_status": "completed",
+      "optimization_started_at": "",
+      "optimization_last_updated": "2026-03-20 07:30:29",
+      "optimization_owner": "",
+      "optimization_notes": "cudagraph FULL_DECODE_ONLY + env vars, TP2=2417 tok/s (36.1% A100)"
+    }
+  ]
+}
