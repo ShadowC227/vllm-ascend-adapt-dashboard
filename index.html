@@ -6,11 +6,13 @@
   <title>VAA — vLLM Ascend Adaptation Board</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/dashboard.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- ?v= 变更后强制浏览器拉取最新 JS/CSS，避免看不到界面更新 -->
+  <link rel="stylesheet" href="css/dashboard.css?v=14" />
 </head>
 <body>
   <div class="bg-grid" aria-hidden="true"></div>
+  <div class="noise-overlay" aria-hidden="true"></div>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="#">
@@ -31,15 +33,28 @@
     </div>
   </header>
 
-  <main class="main">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <main class="main" id="main">
     <section class="hero">
       <h1 data-i18n="headerTitle">vLLM Ascend 适配看板</h1>
-      <p class="hero-desc" data-i18n="headerDesc">跟踪适配、Benchmark 与性能优化流水线状态（数据来自 vllm_board.db 导出）。</p>
+      <p class="hero-desc" data-i18n="headerDesc">模型分三阶段：适配、精度对齐、性能优化。卡片只展示优化后的性能指标，并展示相对 baseline 的提升幅度（加速比/延迟降幅）。</p>
       <p class="meta-line">
+        <span id="liveBadge" class="live-badge hidden" title="实时数据源">LIVE</span>
         <span data-i18n="lastUpdated">最后更新</span>:
         <time id="lastUpdated">—</time>
+        <span id="syncStatus" class="sync-status" aria-live="polite"></span>
       </p>
       <div class="toolbar">
+        <label class="sort-label">
+          <span data-i18n="livePollLabel">自动刷新</span>:
+          <select id="pollSelect" class="sort-select" title="轮询间隔（本地实时服务推荐开启）">
+            <option value="0" data-i18n="pollOff">关闭</option>
+            <option value="3">3s</option>
+            <option value="5" selected>5s</option>
+            <option value="10">10s</option>
+            <option value="30">30s</option>
+          </select>
+        </label>
         <label class="sort-label">
           <span data-i18n="sortLabel">排序</span>:
           <select id="sortSelect" class="sort-select">
@@ -67,11 +82,12 @@
       <p class="panel-desc" data-i18n="statsDesc">基于当前模型列表聚合。</p>
       <div id="statsGrid" class="stats-grid"></div>
       <div class="legend" id="pipelineLegend"></div>
+      <div id="stageStatsGrid" class="stage-stats-grid"></div>
     </section>
 
     <section class="panel models-section" aria-labelledby="modelsTitle">
       <h2 id="modelsTitle" data-i18n="modelsHeading">模型</h2>
-      <p class="panel-desc" data-i18n="modelsDesc">适配任务与流水线阶段（数据来自导出 JSON）。</p>
+      <p class="panel-desc" data-i18n="modelsDesc">三阶段流水线：适配 → 精度对齐 → 性能优化；卡片只展示优化后的性能指标，并展示相对 baseline 的提升幅度。</p>
       <div id="modelsGrid" class="models-grid"></div>
       <p id="loading" class="loading" data-i18n="loading">加载中…</p>
       <p id="noResults" class="empty-hint hidden" data-i18n="noResults">无模型数据</p>
@@ -92,6 +108,6 @@
     </details>
   </footer>
 
-  <script src="js/dashboard.js" type="module"></script>
+  <script src="js/dashboard.js?v=12" type="module"></script>
 </body>
 </html>

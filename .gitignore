@@ -1,2 +1,9 @@
-# 本地可选指标（不强制忽略；若含敏感数据可取消注释）
-# data/metrics_overrides.json
+# 本地可选指标（若含敏感数据勿提交）
+data/metrics_overrides.json
+
+__pycache__/
+*.pyc
+
+# 本地 IDE / Agent
+.claude/
+.cursor/
