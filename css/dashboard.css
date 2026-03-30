@@ -1612,6 +1612,364 @@ body::after {
   }
 }
 
+/* ── Model adaptation docs entry ── */
+.model-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.model-docs-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0.35rem 0.75rem;
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(0, 200, 255, 0.12);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.model-docs-btn:hover {
+  color: var(--text-bright);
+  background: rgba(0, 200, 255, 0.12);
+  border-color: var(--border-hover);
+}
+
+.model-docs-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Model docs modal ── */
+.doc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.doc-modal.hidden {
+  display: none;
+}
+
+.doc-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 14, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.doc-modal-panel {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 100%);
+  max-height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 200, 255, 0.06);
+  animation: fadeIn 0.22s ease-out;
+}
+
+.doc-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.doc-modal-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.doc-modal-close {
+  flex-shrink: 0;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.75rem;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.doc-modal-close:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}
+
+.doc-modal-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.doc-modal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1.15rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.doc-lang-toggle {
+  display: inline-flex;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.doc-lang-btn {
+  min-height: 44px;
+  min-width: 5.5rem;
+  padding: 0 1rem;
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(4, 8, 15, 0.4);
+  border: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.doc-lang-btn:hover {
+  color: var(--text);
+}
+
+.doc-lang-btn.active {
+  color: var(--bg);
+  background: linear-gradient(135deg, var(--accent), var(--violet));
+}
+
+.doc-lang-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.btn-doc-action {
+  min-height: 44px;
+  padding: 0.4rem 0.85rem;
+  font-family: var(--font);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  background: var(--accent-dim);
+  border: 1px solid rgba(0, 200, 255, 0.14);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-doc-action:hover {
+  background: rgba(0, 200, 255, 0.14);
+  border-color: var(--border-hover);
+}
+
+.btn-doc-action-secondary {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--border-subtle);
+}
+
+.btn-doc-action-secondary:hover {
+  color: var(--text);
+}
+
+.btn-doc-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.doc-api-hint {
+  margin: 0;
+  padding: 0.5rem 1.15rem;
+  font-size: 0.78rem;
+  color: var(--warning);
+  background: var(--warning-dim);
+  border-bottom: 1px solid rgba(255, 176, 32, 0.12);
+}
+
+.doc-modal-loading {
+  padding: 0.5rem 1.15rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.doc-modal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem 1.25rem 1.35rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.doc-empty-msg {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.doc-fallback-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* Markdown body (sanitized HTML) */
+.md-body {
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3 {
+  color: var(--text-bright);
+  font-weight: 700;
+  margin: 1.25em 0 0.5em;
+  line-height: 1.3;
+}
+
+.md-body h1 {
+  font-size: 1.35rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.35em;
+}
+
+.md-body h2 {
+  font-size: 1.12rem;
+}
+
+.md-body h3 {
+  font-size: 1rem;
+}
+
+.md-body p {
+  margin: 0.65em 0;
+}
+
+.md-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-body a:hover {
+  color: var(--text-bright);
+}
+
+.md-body code {
+  font-size: 0.86em;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: rgba(0, 200, 255, 0.08);
+  border: 1px solid var(--border-subtle);
+}
+
+.md-body pre {
+  margin: 1em 0;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  border-radius: var(--radius-xs);
+  background: rgba(4, 8, 15, 0.85);
+  border: 1px solid var(--border-subtle);
+}
+
+.md-body pre code {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.8rem;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0.65em 0;
+  padding-left: 1.35rem;
+}
+
+.md-body li {
+  margin: 0.25em 0;
+}
+
+.md-body blockquote {
+  margin: 1em 0;
+  padding: 0.4em 0 0.4em 1em;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin: 1em 0;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border-subtle);
+  padding: 0.45em 0.6em;
+  text-align: left;
+}
+
+.md-body th {
+  background: rgba(0, 200, 255, 0.06);
+  color: var(--text-bright);
+}
+
 /* ── Reduced Motion ── */
 @media (prefers-reduced-motion: reduce) {
   html {

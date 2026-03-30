@@ -59,7 +59,7 @@ const I18N = {
     officialWebsite: "Repository",
     headerTitle: "vLLM Ascend Adaptation Board",
     headerDesc:
-      "Three stages per model: adaptation, accuracy alignment, and performance optimization. Each card shows optimized performance only, plus its improvement vs baseline (speedup / latency reduction).",
+      "Three stages per model: adaptation, accuracy alignment, and performance optimization. Each card shows optimized performance only, plus speedup vs baseline.",
     headerDescLive:
       "Three stages: adaptation → accuracy alignment → performance optimization; cards show optimized performance only, plus improvement vs baseline. Live from local SQLite via serve_live.py — enable auto-refresh below.",
     lastUpdated: "Last updated",
@@ -95,7 +95,7 @@ const I18N = {
     optimizationCompleted: "Performance optimization",
     modelsHeading: "Models",
     modelsDesc:
-      "Pipeline: adaptation → accuracy alignment → performance optimization. Cards show optimized performance only, plus its improvement vs baseline.",
+      "Pipeline: adaptation → accuracy alignment → performance optimization. Cards show optimized performance only, plus speedup vs baseline.",
     livePollLabel: "Auto refresh",
     pollOff: "Off",
     syncFailed: "Refresh failed",
@@ -119,7 +119,6 @@ const I18N = {
     optTooltipOptimizations: "Opts",
     optTooltipBaseline: "Baseline",
     optTooltipPerf: "Optimized",
-    optTooltipLatencyReduction: "Latency Δ",
     optTooltipCosine: "Cosine",
     optTooltipUnavailable: "No optimization metrics",
     optMetricName: "Metric",
@@ -189,6 +188,18 @@ const I18N = {
     roleOptimizer: "Performance optimization",
     roleTeamLead: "Team lead",
     roleUnknown: "Agent",
+    modelDocsOpen: "Adaptation docs",
+    docClose: "Close",
+    docLangLegend: "Document language",
+    docLangEn: "English",
+    docLangZh: "中文",
+    docDownloadCurrent: "Download current",
+    docDownloadEn: "Download English .md",
+    docDownloadZh: "Download Chinese .md",
+    docEmpty: "(No document file)",
+    docApiUnavailable:
+      "Could not load docs: start serve_live.py, or run scripts/export_model_docs.py so data/model_docs.json exists, then hard-refresh.",
+    docLoading: "Loading…",
   },
   zh: {
     brandTitle: "VAA",
@@ -196,7 +207,7 @@ const I18N = {
     officialWebsite: "项目仓库",
     headerTitle: "vLLM Ascend 适配看板",
     headerDesc:
-      "模型分三阶段：适配、精度对齐、性能优化。卡片只展示优化后的性能指标，并展示相对 baseline 的提升幅度（加速比/延迟降幅）。",
+      "模型分三阶段：适配、精度对齐、性能优化。卡片只展示优化后的性能指标，并展示相对 baseline 的加速比。",
     headerDescLive:
       "模型三阶段：适配、精度对齐、性能优化；卡片只展示优化后的性能指标，并展示相对 baseline 的提升幅度。已通过本地实时服务连接数据库（serve_live.py），开启下方「自动刷新」即可随心跳/任务更新。",
     lastUpdated: "最后更新",
@@ -232,7 +243,7 @@ const I18N = {
     optimizationCompleted: "性能优化",
     modelsHeading: "模型",
     modelsDesc:
-      "三阶段流水线：适配 → 精度对齐 → 性能优化；卡片只展示优化后的性能指标，并展示相对 baseline 的提升幅度。",
+      "三阶段流水线：适配 → 精度对齐 → 性能优化；卡片只展示优化后的性能指标，并展示相对 baseline 的加速比。",
     livePollLabel: "自动刷新",
     pollOff: "关闭",
     syncFailed: "刷新失败",
@@ -256,7 +267,6 @@ const I18N = {
     optTooltipOptimizations: "优化项",
     optTooltipBaseline: "baseline（精度对齐）",
     optTooltipPerf: "optimized（性能优化）",
-    optTooltipLatencyReduction: "延迟降幅",
     optTooltipCosine: "余弦相似度",
     optTooltipUnavailable: "暂无性能优化数据",
     optMetricName: "指标",
@@ -325,6 +335,18 @@ const I18N = {
     roleOptimizer: "性能优化",
     roleTeamLead: "团队协调",
     roleUnknown: "Agent",
+    modelDocsOpen: "适配文档",
+    docClose: "关闭",
+    docLangLegend: "文档语言",
+    docLangEn: "English",
+    docLangZh: "中文",
+    docDownloadCurrent: "下载当前",
+    docDownloadEn: "下载英文 MD",
+    docDownloadZh: "下载中文 MD",
+    docEmpty: "（暂无文档文件）",
+    docApiUnavailable:
+      "无法加载文档：请用 serve_live.py 启动看板，或在看板目录执行 python3 scripts/export_model_docs.py 生成 data/model_docs.json 后强刷页面。",
+    docLoading: "加载中…",
   },
 };
 
@@ -337,6 +359,20 @@ let pollTimer = null;
 /** 仅首屏做一次卡片渐入；轮询/排序/翻页不再触发动画，避免整页反复闪动 */
 let didStaggerRevealOnce = false;
 let boardRefreshInFlight = false;
+
+/** 适配目录 Markdown：`{stem}.md` 英文、`{stem}_cn.md` 中文（与 vllm-ascend-adapt/adaptations/... 约定一致） */
+let docModalState = {
+  adaptPath: "",
+  stem: "",
+  displayTitle: "",
+  en: { content: "", exists: false },
+  zh: { content: "", exists: false },
+  enFile: "",
+  zhFile: "",
+  docLang: "zh",
+  apiReached: false,
+};
+let mdLibsPromise = null;
 
 function t(key) {
   const bundle = I18N[lang] || I18N.zh;
@@ -380,7 +416,242 @@ function applyLang() {
   if (heroDesc && boardData?.meta?.dataSource === "live") {
     heroDesc.textContent = bundle.headerDescLive || bundle.headerDesc;
   }
+  const docModal = document.getElementById("modelDocsModal");
+  if (docModal && !docModal.classList.contains("hidden")) {
+    const titleEl = document.getElementById("modelDocsTitle");
+    if (titleEl) {
+      titleEl.textContent = `${t("modelDocsOpen")} · ${docModalState.displayTitle || docModalState.stem || "—"}`;
+    }
+    updateDocModalBodyFromCache();
+  }
   renderAll();
+}
+
+function refreshDocModalI18n() {
+  const bundle = I18N[lang] || I18N.zh;
+  document.querySelectorAll("#modelDocsModal [data-i18n]").forEach((el) => {
+    const k = el.getAttribute("data-i18n");
+    if (k && bundle[k]) el.textContent = bundle[k];
+  });
+}
+
+async function ensureMdLibs() {
+  if (!mdLibsPromise) {
+    mdLibsPromise = Promise.all([
+      import("https://cdn.jsdelivr.net/npm/marked@15.0.6/lib/marked.esm.js"),
+      import("https://cdn.jsdelivr.net/npm/dompurify@3.1.7/+esm"),
+    ]);
+  }
+  return mdLibsPromise;
+}
+
+async function markdownToSafeHtml(md) {
+  const text = (md || "").trim();
+  if (!text) {
+    return `<p class="doc-empty-msg">${escapeHtml(t("docEmpty"))}</p>`;
+  }
+  try {
+    const [{ marked }, domPurifyMod] = await ensureMdLibs();
+    const DOMPurify = domPurifyMod.default;
+    const raw = marked.parse(text);
+    return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+  } catch (e) {
+    console.warn(e);
+    return `<pre class="doc-fallback-pre">${escapeHtml(text)}</pre>`;
+  }
+}
+
+function downloadTextAsFile(filename, text) {
+  const blob = new Blob([text ?? ""], { type: "text/markdown;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || "document.md";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+
+async function updateDocModalBodyFromCache() {
+  const body = document.getElementById("docModalBody");
+  if (!body) return;
+  const slot = docModalState.docLang === "en" ? docModalState.en : docModalState.zh;
+  const html = await markdownToSafeHtml(slot.content || "");
+  body.innerHTML = html;
+}
+
+function setDocModalDocLang(which) {
+  docModalState.docLang = which === "en" ? "en" : "zh";
+  document.querySelectorAll(".doc-lang-btn").forEach((b) => {
+    const on = b.dataset.docLang === docModalState.docLang;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  updateDocModalBodyFromCache();
+}
+
+function normalizeModelDocsPack(pack) {
+  const enC = pack.en?.content ?? "";
+  const zhC = pack.zh?.content ?? "";
+  return {
+    en: {
+      content: enC,
+      exists: !!(pack.en?.exists ?? String(enC).trim()),
+    },
+    zh: {
+      content: zhC,
+      exists: !!(pack.zh?.exists ?? String(zhC).trim()),
+    },
+    enFile: pack.enFile ?? "",
+    zhFile: pack.zhFile ?? "",
+  };
+}
+
+/** 先请求实时 API，失败再读静态 data/model_docs.json（python -m http.server 也可用） */
+async function fetchModelDocsPayload(adaptPath, stem) {
+  const qs = new URLSearchParams();
+  qs.set("adaptPath", adaptPath || "");
+  qs.set("stem", stem || "");
+  const q = qs.toString();
+
+  const apiUrls = [
+    `${window.location.origin}/api/model-docs?${q}`,
+    new URL(`api/model-docs?${q}`, window.location.href).href,
+  ];
+  const triedApi = new Set();
+  for (const url of apiUrls) {
+    if (triedApi.has(url)) continue;
+    triedApi.add(url);
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.ok) {
+        const raw = await res.json();
+        if (raw && typeof raw === "object") return { data: normalizeModelDocsPack(raw), source: "api" };
+      }
+    } catch {
+      /* 继续尝试静态 */
+    }
+  }
+
+  const staticUrls = [
+    new URL("data/model_docs.json", `${window.location.origin}/`).href,
+    new URL("data/model_docs.json", window.location.href).href,
+  ];
+  const triedStatic = new Set();
+  for (const url of staticUrls) {
+    if (triedStatic.has(url)) continue;
+    triedStatic.add(url);
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const idx = await res.json();
+      const pack = idx.byStem && idx.byStem[stem];
+      if (!pack) continue;
+      const norm = normalizeModelDocsPack(pack);
+      if (norm.en.exists || norm.zh.exists) return { data: norm, source: "static" };
+    } catch {
+      /* */
+    }
+  }
+  return null;
+}
+
+async function fetchAndShowModelDocs(adaptPath, stem, displayTitle) {
+  docModalState = {
+    adaptPath,
+    stem,
+    displayTitle,
+    en: { content: "", exists: false },
+    zh: { content: "", exists: false },
+    enFile: stem ? `${stem}.md` : "",
+    zhFile: stem ? `${stem}_cn.md` : "",
+    docLang: lang === "en" ? "en" : "zh",
+    apiReached: false,
+  };
+  const modal = document.getElementById("modelDocsModal");
+  const loading = document.getElementById("docModalLoading");
+  const hint = document.getElementById("docApiHint");
+  const titleEl = document.getElementById("modelDocsTitle");
+  const bodyEl = document.getElementById("docModalBody");
+  if (!modal) return;
+  refreshDocModalI18n();
+  titleEl.textContent = `${t("modelDocsOpen")} · ${displayTitle || stem || "—"}`;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  loading?.classList.remove("hidden");
+  hint?.classList.add("hidden");
+  if (bodyEl) bodyEl.innerHTML = "";
+
+  setDocModalDocLang(docModalState.docLang);
+
+  try {
+    const result = await fetchModelDocsPayload(adaptPath, stem);
+    if (result) {
+      docModalState.apiReached = true;
+      const data = result.data;
+      docModalState.en = data.en || { content: "", exists: false };
+      docModalState.zh = data.zh || { content: "", exists: false };
+      if (data.enFile) docModalState.enFile = data.enFile;
+      if (data.zhFile) docModalState.zhFile = data.zhFile;
+    } else {
+      docModalState.apiReached = false;
+      hint?.classList.remove("hidden");
+      refreshDocModalI18n();
+    }
+  } catch {
+    docModalState.apiReached = false;
+    hint?.classList.remove("hidden");
+    refreshDocModalI18n();
+  } finally {
+    loading?.classList.add("hidden");
+  }
+  await updateDocModalBodyFromCache();
+  document.getElementById("modelDocsClose")?.focus();
+}
+
+function closeModelDocsModal() {
+  const modal = document.getElementById("modelDocsModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function initModelDocsModal() {
+  const modal = document.getElementById("modelDocsModal");
+  if (!modal) return;
+  modal.querySelectorAll("[data-doc-modal-dismiss]").forEach((el) => {
+    el.addEventListener("click", () => closeModelDocsModal());
+  });
+  modal.querySelectorAll(".doc-lang-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setDocModalDocLang(btn.dataset.docLang));
+  });
+  document.getElementById("docDownloadCurrent")?.addEventListener("click", () => {
+    const isEn = docModalState.docLang === "en";
+    const fn = isEn ? docModalState.enFile : docModalState.zhFile;
+    const text = isEn ? docModalState.en.content : docModalState.zh.content;
+    downloadTextAsFile(fn, text);
+  });
+  document.getElementById("docDownloadEn")?.addEventListener("click", () => {
+    downloadTextAsFile(docModalState.enFile, docModalState.en.content);
+  });
+  document.getElementById("docDownloadZh")?.addEventListener("click", () => {
+    downloadTextAsFile(docModalState.zhFile, docModalState.zh.content);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) closeModelDocsModal();
+  });
+
+  const grid = document.getElementById("modelsGrid");
+  grid?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".model-docs-btn");
+    if (!btn || !grid.contains(btn)) return;
+    e.preventDefault();
+    const ap = btn.getAttribute("data-adapt-path") || "";
+    const stem = btn.getAttribute("data-stem") || "";
+    const title = btn.getAttribute("data-title") || stem;
+    fetchAndShowModelDocs(ap, stem, title);
+  });
 }
 
 function parseTime(s) {
@@ -709,12 +980,8 @@ function renderBenchmarkSummary(rows) {
   const bestOptimized = pickBestRow(optimized);
   const bOut = bestBaseline ? toNum(bestBaseline.output_tok_per_s) : null;
   const oOut = bestOptimized ? toNum(bestOptimized.output_tok_per_s) : null;
-  const bTtft = bestBaseline ? toNum(bestBaseline.mean_ttft_ms) : null;
-  const oTtft = bestOptimized ? toNum(bestOptimized.mean_ttft_ms) : null;
 
   const speedup = bOut != null && oOut != null && bOut !== 0 ? oOut / bOut : null;
-  const latencyReductionPct =
-    bTtft != null && oTtft != null && bTtft !== 0 ? ((bTtft - oTtft) / bTtft) * 100 : null;
 
   const fmtRatio = (v) => {
     if (v == null) return "—";
@@ -723,17 +990,8 @@ function renderBenchmarkSummary(rows) {
     return `${x.toFixed(3)}×`;
   };
 
-  const fmtPct = (v) => {
-    if (v == null) return "—";
-    const x = Number(v);
-    if (!Number.isFinite(x)) return "—";
-    return `${x.toFixed(1)}%`;
-  };
-
   const speedupText = fmtRatio(speedup);
-  const latText = latencyReductionPct == null ? "—" : `↓ ${fmtPct(latencyReductionPct)}`;
   const speedupClass = speedup == null ? "is-neutral" : speedup >= 1 ? "is-good" : "is-bad";
-  const latClass = latencyReductionPct == null ? "is-neutral" : latencyReductionPct >= 0 ? "is-good" : "is-bad";
   const methodsText = String(bestOptimized?.optimization_methods || bestOptimized?.chips || "").trim() || "—";
   const chipsText = String(bestOptimized?.chips || "").trim();
   const chips = chipsText
@@ -751,11 +1009,6 @@ function renderBenchmarkSummary(rows) {
       ? `baseline output_tok_per_s=${bOut} → optimized=${oOut}`
       : "baseline/optimized output_tok_per_s not available";
 
-  const latencyTitle =
-    bTtft != null && oTtft != null
-      ? `baseline mean_ttft_ms=${bTtft} → optimized=${oTtft}`
-      : "baseline/optimized mean_ttft_ms not available";
-
   const optSummary = `
     <div class="opt-block">
       <table class="opt-degree-table">
@@ -769,10 +1022,6 @@ function renderBenchmarkSummary(rows) {
           <tr title="${escapeHtmlAttr(speedupTitle)}">
             <td>${escapeHtml(t("optTooltipSpeedup"))}</td>
             <td><span class="metric-value ${escapeHtml(speedupClass)}">${escapeHtml(speedupText)}</span></td>
-          </tr>
-          <tr title="${escapeHtmlAttr(latencyTitle)}">
-            <td>${escapeHtml(t("optTooltipLatencyReduction"))}</td>
-            <td><span class="metric-value ${escapeHtml(latClass)}">${escapeHtml(latText)}</span></td>
           </tr>
           <tr title="optimized output_tok_per_s">
             <td>${escapeHtml(t("throughput"))}</td>
@@ -1189,6 +1438,7 @@ function renderModelsPage(animateReveal) {
   grid.innerHTML = slice
     .map((m) => {
       const shortName = (m.model_id && m.model_id.split("/").pop()) || "—";
+      const docStem = (m.model_id && m.model_id.split("/").pop()) || "";
       const org = (m.model_id && m.model_id.includes("/") && m.model_id.split("/")[0]) || "";
       const path = (m.adaptation_path || "").replace(/^adaptations\//, "");
       const adaptSt = (m.status || "").toLowerCase();
@@ -1213,7 +1463,14 @@ function renderModelsPage(animateReveal) {
           </div>
           <span class="${statusPillClass(m.status)}">${escapeHtml(tStatus("adapt", m.status))}</span>
         </div>
-        <div class="path-pill" title="${escapeHtml(m.adaptation_path || "")}">${escapeHtml(path || "—")}</div>
+        <div class="model-path-row">
+          <div class="path-pill" title="${escapeHtml(m.adaptation_path || "")}">${escapeHtml(path || "—")}</div>
+          <button type="button" class="model-docs-btn" data-adapt-path="${escapeHtmlAttr(
+            m.adaptation_path || ""
+          )}" data-stem="${escapeHtmlAttr(docStem)}" data-title="${escapeHtmlAttr(shortName)}" data-i18n="modelDocsOpen">${escapeHtml(
+        t("modelDocsOpen")
+      )}</button>
+        </div>
         <div class="adapt-duration-row" title="${escapeHtmlAttr(adaptDurTitle || "—")}">
           <span class="adapt-duration-label">${escapeHtml(t("adaptDurationLabel"))}</span>
           <span class="adapt-duration-value ${adaptRunning ? "is-live" : ""}">${escapeHtml(formatAdaptDurationLine(m))}${
@@ -1370,6 +1627,8 @@ async function init() {
       applyLang();
     });
   });
+
+  initModelDocsModal();
 
   document.getElementById("sortSelect").addEventListener("change", (e) => {
     sortMode = e.target.value;

@@ -12,4 +12,8 @@ ROOT="$PWD"
 DB="${VLLM_BOARD_DB:-$ROOT/../vllm-ascend-adapt/vllm_board.db}"
 HOST="${VAA_HOST:-127.0.0.1}"
 PORT="${VAA_PORT:-8765}"
-exec python3 scripts/serve_live.py --host "$HOST" --port "$PORT" --db "$DB" "$@"
+EXTRA=()
+if [ -n "${VAA_ADAPT_ROOT:-}" ]; then
+  EXTRA+=(--adapt-root "$VAA_ADAPT_ROOT")
+fi
+exec python3 scripts/serve_live.py --host "$HOST" --port "$PORT" --db "$DB" "${EXTRA[@]}" "$@"
