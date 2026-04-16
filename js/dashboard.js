@@ -52,6 +52,23 @@ const BENCH_COLS = [
 
 const ACC_COLS = ["id", "dataset", "benchmark_stage", "accuracy", "total_samples", "correct_samples", "created_at", "notes"];
 
+/** optimization_methods 解析出的标签：以下项不在卡片上展示（环境变量等） */
+const OPT_CHIP_HIDE_EXACT = new Set([
+  "cudagraph_FULL_DECODE_ONLY",
+  "TASK_QUEUE_ENABLE=1",
+  "CPU_AFFINITY_CONF=1",
+  "OMP_NUM_THREADS=8",
+  "jemalloc",
+  "PYTORCH_NPU_ALLOC_CONF=expandable_segments:True",
+]);
+
+function shouldHideOptChipLabel(chip) {
+  const t = String(chip).trim();
+  if (OPT_CHIP_HIDE_EXACT.has(t)) return true;
+  const underscored = t.replace(/\s+/g, "_");
+  return OPT_CHIP_HIDE_EXACT.has(underscored);
+}
+
 const I18N = {
   en: {
     brandTitle: "VAA",
@@ -153,6 +170,17 @@ const I18N = {
     pipeAdapt: "Adapt",
     pipeBench: "Accuracy alignment",
     pipeOpt: "Performance optimization",
+    reviewActionRow: "Review",
+    reviewApprove: "Approve",
+    schemeALabel: "Latency Priority",
+    schemeBLabel: "Throughput Priority",
+    schemeBaselineNote: "Shared baseline",
+    reviewReject: "Reject",
+    reviewApproved: "Approved",
+    sendBackLabel: "Send back:",
+    sendBackAdaptation: "Adaptation",
+    sendBackBenchmark: "Accuracy alignment",
+    sendBackOptimization: "Optimization",
     statusLabels: {
       pending: "Pending",
       in_progress: "In progress",
@@ -300,6 +328,17 @@ const I18N = {
     pipeAdapt: "适配",
     pipeBench: "精度对齐",
     pipeOpt: "性能优化",
+    reviewActionRow: "人工审核",
+    reviewApprove: "通过",
+    schemeALabel: "延迟优先",
+    schemeBLabel: "吞吐优先",
+    schemeBaselineNote: "共享基线",
+    reviewReject: "打回",
+    reviewApproved: "已通过",
+    sendBackLabel: "阶段回退:",
+    sendBackAdaptation: "适配",
+    sendBackBenchmark: "精度对齐",
+    sendBackOptimization: "性能优化",
     statusLabels: {
       pending: "待处理",
       in_progress: "进行中",
@@ -652,6 +691,51 @@ function initModelDocsModal() {
     const title = btn.getAttribute("data-title") || stem;
     fetchAndShowModelDocs(ap, stem, title);
   });
+
+  // Review action buttons (approve / reject)
+  grid?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".btn-review");
+    if (!btn || !grid.contains(btn)) return;
+    e.preventDefault();
+    const action = btn.dataset.reviewAction;
+    const modelId = btn.dataset.modelId;
+    if (!action || !modelId) return;
+    const confirmed = confirm(action === "approve" ? "Approve " + modelId + "?" : "Reject (send back) " + modelId + "?");
+    if (!confirmed) return;
+    btn.disabled = true;
+    const apiUrl = window.DASHBOARD_API_URL || "";
+    fetch(apiUrl + "/api/human-review/" + encodeURIComponent(modelId), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: action === "approve" ? "completed" : "pending" }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(() => { refreshAllData(); })
+      .catch((err) => { alert("Review failed: " + err.message); btn.disabled = false; });
+  });
+
+  // Send-back buttons
+  grid?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".send-back-btn");
+    if (!btn || !grid.contains(btn)) return;
+    e.preventDefault();
+    const modelId = btn.dataset.modelId;
+    const targetStage = btn.dataset.targetStage;
+    if (!modelId || !targetStage) return;
+    const stageNames = { adaptation: "\u9002\u914d", benchmark: "\u7cbe\u5ea6\u5bf9\u9f50", optimization: "\u6027\u80fd\u4f18\u5316" };
+    const confirmed = confirm("\u786e\u5b9a\u5c06 " + modelId + " \u6253\u56de\u5230\u300c" + (stageNames[targetStage] || targetStage) + "\u300d\uff1f");
+    if (!confirmed) return;
+    btn.disabled = true;
+    const apiUrl = window.DASHBOARD_API_URL || "";
+    fetch(apiUrl + "/api/send-back/" + encodeURIComponent(modelId), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_stage: targetStage }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(() => { refreshAllData(); })
+      .catch((err) => { alert("Send back failed: " + err.message); btn.disabled = false; });
+  });
 }
 
 function parseTime(s) {
@@ -737,9 +821,16 @@ function normModelId(s) {
   return String(s ?? "").trim().toLowerCase();
 }
 
+/** 只保留最终展示所需的三个 benchmark_stage */
+const FINAL_BENCH_STAGES = new Set(["baseline", "final_scheme_a", "final_scheme_b"]);
+
 function benchRowsForModel(modelId) {
   const want = normModelId(modelId);
-  return (boardData.benchmark_results || []).filter((r) => normModelId(r.model_id) === want);
+  return (boardData.benchmark_results || []).filter((r) => {
+    if (normModelId(r.model_id) !== want) return false;
+    const stage = String(r.benchmark_stage || "").trim().toLowerCase();
+    return FINAL_BENCH_STAGES.has(stage);
+  });
 }
 
 function fmtBenchNum(v) {
@@ -875,11 +966,63 @@ function pickStageRows(rows, stage) {
   });
 }
 
+function renderReviewActionRow(m) {
+  const optSt = (m.optimization_status || "").trim().toLowerCase();
+  if (optSt !== "completed") return "";
+  const hr = (m.human_review_status || "").trim().toLowerCase();
+  const isPending = hr === "pending";
+  const isCompleted = hr === "completed";
+  if (!isPending && !isCompleted) return "";
+
+  const mid = escapeHtmlAttr(m.model_id || "");
+  let content = "";
+  if (isPending) {
+    content = '<button type="button" class="v31-act-btn v31-act-btn--approve" data-review-action="approve" data-model-id="' + mid + '">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+      + escapeHtml(t("reviewApprove")) + "</button>";
+  } else {
+    content = '<span class="v31-act-done"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>'
+      + escapeHtml(t("reviewApproved")) + "</span>"
+      + '<button type="button" class="v31-act-btn v31-act-btn--reject" data-review-action="reject" data-model-id="' + mid + '">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>'
+      + escapeHtml(t("reviewReject")) + "</button>";
+  }
+
+  return '<div class="v31-act-row v31-act-row--review">'
+    + '<span class="v31-act-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M9 12l2 2 4-4"/></svg>'
+    + escapeHtml(t("reviewActionRow")) + "</span>"
+    + '<div class="v31-act-buttons">' + content + "</div></div>";
+}
+
+function renderSendBackRow(m) {
+  const adaptDone = (m.status || "").trim().toLowerCase() === "completed";
+  const benchDone = (m.benchmark_status || "").trim().toLowerCase() === "completed";
+  const optDone = (m.optimization_status || "").trim().toLowerCase() === "completed";
+  if (!adaptDone && !benchDone && !optDone) return "";
+
+  const mid = escapeHtmlAttr(m.model_id || "");
+  const stages = [
+    { key: "adaptation", label: t("sendBackAdaptation"), done: adaptDone, icon: "adapt" },
+    { key: "benchmark", label: t("sendBackBenchmark"), done: benchDone, icon: "bench" },
+    { key: "optimization", label: t("sendBackOptimization"), done: optDone, icon: "opt" },
+  ];
+
+  const btns = stages.map(s => {
+    const dis = s.done ? "" : " disabled";
+    return '<button type="button" class="v31-act-btn v31-act-btn--back v31-act-btn--back-' + s.icon + '"'
+      + ' data-model-id="' + mid + '" data-target-stage="' + s.key + '"' + dis + '>'
+      + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>'
+      + escapeHtml(s.label) + "</button>";
+  }).join("");
+
+  return '<div class="v31-act-row v31-act-row--sendback">'
+    + '<span class="v31-act-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>'
+    + escapeHtml(t("sendBackLabel")) + "</span>"
+    + '<div class="v31-act-buttons">' + btns + "</div></div>";
+}
+
 function renderBenchmarkSummary(rows) {
   if (!rows || !rows.length) return "";
-
-  const baseline = pickStageRows(rows, "baseline").slice().sort((a, b) => (a.tensor_parallel_size ?? 0) - (b.tensor_parallel_size ?? 0));
-  const optimized = pickStageRows(rows, "optimized").slice().sort((a, b) => (a.tensor_parallel_size ?? 0) - (b.tensor_parallel_size ?? 0));
 
   const toNum = (v) => {
     if (v == null || v === "") return null;
@@ -887,174 +1030,145 @@ function renderBenchmarkSummary(rows) {
     return Number.isFinite(x) ? x : null;
   };
 
-  // 选择“代表性”的行用于计算提升幅度：优先 output_tok_per_s，其次 req_per_s，再退化为第一行
-  const pickBestRow = (stageRows) => {
-    if (!stageRows || stageRows.length === 0) return null;
-    const scored = stageRows
-      .map((r) => {
-        const out = toNum(r.output_tok_per_s);
-        const req = toNum(r.req_per_s);
-        const total = toNum(r.total_tok_per_s);
-        // out/req/total 取最大；相互不可比时仍有一个优先级
-        const score = out ?? req ?? total ?? null;
-        return { r, score };
-      })
-      .filter((x) => x.score != null);
-    if (scored.length === 0) return stageRows[0];
-    scored.sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
-    return scored[0].r;
+  const tpNum = (r) => { const x = Number(r.tensor_parallel_size); return Number.isFinite(x) ? x : Infinity; };
+
+  /* --- Data splitting (new schema: benchmark_stage = baseline / final_scheme_a / final_scheme_b) --- */
+  const sharedBaseline = rows.filter((r) => {
+    const v = String(r.benchmark_stage || "").trim().toLowerCase();
+    return /(^|_)baseline($|_)/.test(v);
+  }).slice().sort((a, b) => tpNum(a) - tpNum(b));
+
+  const schemeA = rows.filter((r) => String(r.benchmark_stage || "").trim().toLowerCase() === "final_scheme_a");
+  const schemeB = rows.filter((r) => String(r.benchmark_stage || "").trim().toLowerCase() === "final_scheme_b");
+  const genericOpt = pickStageRows(rows, "optimized").filter((r) => {
+    const v = String(r.benchmark_stage || "").trim().toLowerCase();
+    return v !== "final_scheme_a" && v !== "final_scheme_b";
+  });
+
+  const hasSchemes = schemeA.length > 0 || schemeB.length > 0;
+
+  /* --- Render helpers --- */
+  const benchCell = (val) => {
+    if (val == null || val === "") return '<span class="bench-tbd">TBD</span>';
+    return escapeHtml(fmtBenchNum(val));
   };
 
-  const stageTable = (stageRows, stageKey) => {
-    if (!stageRows.length) return "";
+  const titleParts = (r) => [
+    "TP=" + (r.tensor_parallel_size ?? "\u2014"),
+    "output_tok_per_s=" + (r.output_tok_per_s ?? "\u2014"),
+    "req_per_s=" + (r.req_per_s ?? "\u2014"),
+    "mean_ttft_ms=" + (r.mean_ttft_ms ?? "\u2014"),
+    "mean_tpot_ms=" + (r.mean_tpot_ms ?? "\u2014"),
+    "peak_tok_per_s=" + (r.peak_tok_per_s ?? "\u2014"),
+    r.notes ? "notes=" + r.notes : "",
+  ].filter(Boolean).join("\n");
+
+  const renderTableRow = (r) => {
+    const tp = r.tensor_parallel_size ?? "\u2014";
+    return '<tr title="' + escapeHtmlAttr(titleParts(r)) + '">'
+      + '<td class="bench-td-tp"><div class="bench-tp-cell"><span class="bench-tp-badge">TP' + escapeHtml(String(tp)) + "</span></div></td>"
+      + "<td>" + benchCell(r.output_tok_per_s) + "</td>"
+      + "<td>" + benchCell(r.req_per_s) + "</td>"
+      + "<td>" + benchCell(r.mean_ttft_ms) + " ms</td>"
+      + "<td>" + benchCell(r.mean_tpot_ms) + " ms</td>"
+      + "</tr>";
+  };
+
+  const renderTable = (dataRows, stageKey) => {
+    if (!dataRows || !dataRows.length) return "";
+    const sorted = dataRows.slice().sort((a, b) => tpNum(a) - tpNum(b));
     const stageLabel = stageKey === "baseline" ? t("stageBaseline") : t("stageOptimized");
-
-    const header = `
-      <thead>
-        <tr>
-          <th><code>TP</code></th>
-          <th><code>tok/s</code></th>
-          <th><code>req/s</code></th>
-          <th><code>TTFT</code> (ms)</th>
-          <th><code>TPOT</code> (ms)</th>
-        </tr>
-      </thead>`;
-
-    const body = stageRows
-      .map((r) => {
-        const tp = r.tensor_parallel_size ?? "—";
-        const out = r.output_tok_per_s != null ? fmtBenchNum(r.output_tok_per_s) : "—";
-        const req = r.req_per_s != null ? fmtBenchNum(r.req_per_s) : "—";
-        const ttft = r.mean_ttft_ms != null ? fmtBenchNum(r.mean_ttft_ms) : "—";
-        const tpot = r.mean_tpot_ms != null ? fmtBenchNum(r.mean_tpot_ms) : "—";
-
-        const title = [
-          `TP=${tp}`,
-          `output_tok_per_s=${r.output_tok_per_s ?? "—"}`,
-          `req_per_s=${r.req_per_s ?? "—"}`,
-          `mean_ttft_ms=${r.mean_ttft_ms ?? "—"}`,
-          `mean_tpot_ms=${r.mean_tpot_ms ?? "—"}`,
-          `peak_tok_per_s=${r.peak_tok_per_s ?? "—"}`,
-          `total_tok_per_s=${r.total_tok_per_s ?? "—"}`,
-          r.log_file ? `log_file=${r.log_file}` : "",
-          r.notes ? `notes=${r.notes}` : "",
-        ]
-          .filter(Boolean)
-          .join("\\n");
-
-        return `
-          <tr title="${escapeHtmlAttr(title)}">
-            <td>TP${escapeHtml(String(tp))}</td>
-            <td>${escapeHtml(String(out))}</td>
-            <td>${escapeHtml(String(req))}</td>
-            <td>${escapeHtml(String(ttft))}</td>
-            <td>${escapeHtml(String(tpot))}</td>
-          </tr>`;
-      })
-      .join("");
-
-    return `
-      <div class="bench-stage bench-stage--${escapeHtml(stageKey)}">
-        <div class="bench-stage-title">${escapeHtml(stageLabel)}</div>
-        <div class="bench-scroll">
-          <table class="bench-table">
-            ${header}
-            <tbody>${body}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
+    return '<div class="bench-stage bench-stage--' + escapeHtml(stageKey) + '">'
+      + '<div class="bench-stage-title">' + escapeHtml(stageLabel) + '</div>'
+      + '<div class="bench-scroll"><table class="bench-table">'
+      + '<thead><tr><th>TP</th><th>tok/s</th><th>req/s</th><th>TTFT</th><th>TPOT</th></tr></thead>'
+      + '<tbody>' + sorted.map(renderTableRow).join("") + '</tbody>'
+      + '</table></div></div>';
   };
 
-  const blockBaseline = stageTable(baseline, "baseline");
-  const blockOptimized = stageTable(optimized, "optimized");
-  if (!blockBaseline && !blockOptimized) {
-    return `
-      <div class="bench-summary">
-        <div class="bench-empty">${escapeHtml(t("optTooltipUnavailable"))}</div>
-      </div>
-    `;
+  /* --- Speedup calc --- */
+  const calcSpeedup = (optRows) => {
+    if (!optRows || !optRows.length || !sharedBaseline.length) return null;
+    const bestOpt = optRows.slice().sort((a, b) => (toNum(b.output_tok_per_s) ?? -Infinity) - (toNum(a.output_tok_per_s) ?? -Infinity))[0];
+    const oOut = toNum(bestOpt?.output_tok_per_s);
+    if (oOut == null) return null;
+    const tp = bestOpt.tensor_parallel_size;
+    const matchBaseline = sharedBaseline.find((r) => r.tensor_parallel_size === tp);
+    const bOut = toNum(matchBaseline?.output_tok_per_s) ?? toNum(sharedBaseline[0]?.output_tok_per_s);
+    if (bOut == null || bOut === 0) return null;
+    return { speedup: oOut / bOut, optRow: bestOpt, baseRow: matchBaseline || sharedBaseline[0] };
+  };
+
+  const speedupBadge = (sp) => {
+    if (sp == null) return "";
+    const cls = sp.speedup >= 1 ? "is-good" : "is-bad";
+    return '<span class="bench-scheme-speedup ' + cls + '">' + sp.speedup.toFixed(2) + "&times;</span>";
+  };
+
+  const chipsHtml = (r) => {
+    const txt = String(r?.chips || r?.optimization_methods || "").trim();
+    if (!txt) return "";
+    const chips = txt.split(/[|,;]+/).map((x) => x.trim()).filter(Boolean)
+      .filter((x) => /[A-Za-z_\-\u4e00-\u9fa5]/.test(x))
+      .filter((x) => !shouldHideOptChipLabel(x))
+      .slice(0, 6);
+    if (!chips.length) return "";
+    return '<div class="opt-chips">' + chips.map((c) => '<span class="opt-chip">' + escapeHtml(c) + '</span>').join("") + '</div>';
+  };
+
+  /* --- Empty state --- */
+  if (!sharedBaseline.length && !genericOpt.length && !hasSchemes) {
+    return '<div class="bench-summary"><div class="bench-empty">' + escapeHtml(t("optTooltipUnavailable")) + "</div></div>";
   }
 
-  const bestBaseline = pickBestRow(baseline);
-  const bestOptimized = pickBestRow(optimized);
-  const bOut = bestBaseline ? toNum(bestBaseline.output_tok_per_s) : null;
-  const oOut = bestOptimized ? toNum(bestOptimized.output_tok_per_s) : null;
+  /* --- Layout: shared baseline on top, then scheme panels --- */
+  if (hasSchemes) {
+    const spA = calcSpeedup(schemeA);
+    const spB = calcSpeedup(schemeB);
 
+    const panelA = '<div class="bench-scheme-panel bench-scheme-panel--a">'
+      + '<div class="bench-scheme-header"><span class="bench-scheme-label">' + escapeHtml(t("schemeALabel")) + '</span>'
+      + '<span class="bench-scheme-baseline-note">' + escapeHtml(t("schemeBaselineNote")) + '</span>'
+      + speedupBadge(spA) + '</div>'
+      + renderTable(schemeA, "optimized")
+      + chipsHtml(spA?.optRow) + '</div>';
+
+    const panelB = '<div class="bench-scheme-panel bench-scheme-panel--b">'
+      + '<div class="bench-scheme-header"><span class="bench-scheme-label">' + escapeHtml(t("schemeBLabel")) + '</span>'
+      + '<span class="bench-scheme-baseline-note">' + escapeHtml(t("schemeBaselineNote")) + '</span>'
+      + speedupBadge(spB) + '</div>'
+      + renderTable(schemeB, "optimized")
+      + chipsHtml(spB?.optRow) + '</div>';
+
+    return '<div class="bench-summary">'
+      + renderTable(sharedBaseline, "baseline")
+      + '<div class="bench-schemes-grid">' + panelA + panelB + '</div>'
+      + '</div>';
+  }
+
+  /* --- No scheme data: original single-column layout --- */
+  const bestBaseline = sharedBaseline.length ? sharedBaseline[0] : null;
+  const bestOptimized = genericOpt.length ? genericOpt[0] : null;
+  const bOut = toNum(bestBaseline?.output_tok_per_s);
+  const oOut = toNum(bestOptimized?.output_tok_per_s);
   const speedup = bOut != null && oOut != null && bOut !== 0 ? oOut / bOut : null;
-
-  const fmtRatio = (v) => {
-    if (v == null) return "—";
-    const x = Number(v);
-    if (!Number.isFinite(x)) return "—";
-    return `${x.toFixed(3)}×`;
-  };
-
-  const speedupText = fmtRatio(speedup);
   const speedupClass = speedup == null ? "is-neutral" : speedup >= 1 ? "is-good" : "is-bad";
-  const methodsText = String(bestOptimized?.optimization_methods || bestOptimized?.chips || "").trim() || "—";
-  const chipsText = String(bestOptimized?.chips || "").trim();
-  const chips = chipsText
-    ? chipsText
-        .split(/[|,;]+/)
-        .map((x) => x.trim())
-        .filter(Boolean)
-        // 只展示有语义的标签；纯数字(如 0/1)通常是内部标记位
-        .filter((x) => /[A-Za-z_\-\u4e00-\u9fa5]/.test(x))
-        .slice(0, 8)
-    : [];
+  const speedupText = speedup != null ? speedup.toFixed(3) + "\u00d7" : "\u2014";
 
-  const speedupTitle =
-    bOut != null && oOut != null
-      ? `baseline output_tok_per_s=${bOut} → optimized=${oOut}`
-      : "baseline/optimized output_tok_per_s not available";
+  const optSummary = '<div class="opt-block"><table class="opt-degree-table"><thead><tr>'
+    + '<th>' + escapeHtml(t("optMetricName")) + '</th>'
+    + '<th>' + escapeHtml(t("optMetricValue")) + '</th></tr></thead><tbody>'
+    + '<tr><td>' + escapeHtml(t("optTooltipSpeedup")) + '</td>'
+    + '<td><span class="metric-value ' + escapeHtml(speedupClass) + '">' + escapeHtml(speedupText) + '</span></td></tr>'
+    + '<tr><td>' + escapeHtml(t("throughput")) + '</td>'
+    + '<td><span class="metric-value">' + escapeHtml(bestOptimized && bestOptimized.output_tok_per_s != null ? fmtBenchNum(bestOptimized.output_tok_per_s) : "\u2014") + '</span></td></tr>'
+    + '</tbody></table>' + chipsHtml(bestOptimized) + '</div>';
 
-  const optSummary = `
-    <div class="opt-block">
-      <table class="opt-degree-table">
-        <thead>
-          <tr>
-            <th>${escapeHtml(t("optMetricName"))}</th>
-            <th>${escapeHtml(t("optMetricValue"))}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr title="${escapeHtmlAttr(speedupTitle)}">
-            <td>${escapeHtml(t("optTooltipSpeedup"))}</td>
-            <td><span class="metric-value ${escapeHtml(speedupClass)}">${escapeHtml(speedupText)}</span></td>
-          </tr>
-          <tr title="optimized output_tok_per_s">
-            <td>${escapeHtml(t("throughput"))}</td>
-            <td>
-              <span class="metric-value">
-                ${escapeHtml(bestOptimized && bestOptimized.output_tok_per_s != null ? fmtBenchNum(bestOptimized.output_tok_per_s) : "—")}
-              </span>
-            </td>
-          </tr>
-          <tr title="optimized optimization_methods">
-            <td>${escapeHtml(t("optMethodLabel"))}</td>
-            <td><span class="metric-value opt-method-value">${escapeHtml(methodsText)}</span></td>
-          </tr>
-        </tbody>
-      </table>
-      ${
-        chips.length
-          ? `<div class="opt-chips">${chips
-              .map((c) => `<span class="opt-chip">${escapeHtml(c)}</span>`)
-              .join("")}</div>`
-          : ""
-      }
-    </div>
-  `;
-
-  return `
-    <div class="bench-summary">
-      ${optSummary}
-      ${blockBaseline}
-      ${blockOptimized}
-    </div>
-  `;
+  return '<div class="bench-summary">' + optSummary
+    + renderTable(sharedBaseline, "baseline")
+    + renderTable(genericOpt, "optimized") + '</div>';
 }
+
 
 /** 模型卡片内：精度结果（accuracy_results），按 benchmark_stage 分组 */
 function renderAccuracySummary(rows) {
@@ -1309,68 +1423,103 @@ function renderStats(models, animateReveal) {
   const legend = document.getElementById("pipelineLegend");
   const stageGrid = document.getElementById("stageStatsGrid");
 
-  const items = [
-    { label: "statTotal", value: stats.total },
-    { label: "statusCompleted", value: stats.completed },
+  const completionRate = stats.total ? ((stats.completed / stats.total) * 100).toFixed(1) : "0.0";
+
+  const kpis = [
+    { label: t("statTotal"), value: String(stats.total), variant: "" },
+    { label: t("statusCompleted"), value: String(stats.completed), variant: "done", extra: completionRate + "%" },
+    { label: t("statusInProgress"), value: String(stats.inProgress), variant: "run" },
     {
-      label: "statAvgDuration",
+      label: t("statAvgDuration"),
       value: stats.avgDurationMs != null ? formatDurationMs(stats.avgDurationMs) : "—",
+      variant: "",
     },
-    { label: "statusInProgress", value: stats.inProgress },
-    { label: "statNeedsAuth", value: stats.needsAuth },
-    { label: "statusNotApplicable", value: stats.na },
-    { label: "statSkipped", value: stats.skipped },
   ];
 
-  grid.innerHTML = items
+  grid.innerHTML = `
+    <div class="v31-kpi-grid">
+      ${kpis.map(
+        (k) => `
+        <div class="v31-kpi${k.variant ? " v31-kpi--" + k.variant : ""}">
+          <div class="v31-kpi-num">${escapeHtml(k.value)}</div>
+          <div class="v31-kpi-lbl">${escapeHtml(k.label)}</div>
+          ${k.extra ? `<div class="v31-kpi-tag">${escapeHtml(k.extra)}</div>` : ""}
+        </div>
+      `
+      ).join("")}
+    </div>
+    ${_renderSecondaryChips(stats)}
+  `;
+
+  observeRevealItems(grid, ".v31-kpi", animateReveal);
+
+  legend.innerHTML = "";
+
+  const stages = [
+    { title: t("stagePanelAdaptation"), data: stats.adaptation, color: "adapt" },
+    { title: t("stagePanelBenchmark"), data: stats.benchmark, color: "bench" },
+    { title: t("stagePanelOptimization"), data: stats.optimization, color: "opt" },
+  ];
+
+  if (stageGrid) {
+    stageGrid.innerHTML = `
+      <div class="v31-pipeline">
+        <div class="v31-pipeline-title">${escapeHtml(t("pipelineLegendTitle"))}</div>
+        <div class="v31-pipeline-flow">
+          ${stages
+            .map(
+              (s, i) => {
+                const pct = s.data.eligible ? Math.round((s.data.completed / s.data.eligible) * 100) : 0;
+                const detail = s.data.eligible ? `${s.data.completed}/${s.data.eligible}` : "0/0";
+                return `
+                <div class="v31-pipe-slot">
+                  <div class="v31-pipe-card v31-pipe-card--${s.color}">
+                    <div class="v31-pipe-head">
+                      <span class="v31-pipe-name">${escapeHtml(s.title)}</span>
+                      <span class="v31-pipe-badge">${escapeHtml(detail)}</span>
+                    </div>
+                    <div class="v31-pipe-bar">
+                      <div class="v31-pipe-fill v31-pipe-fill--${s.color}" style="width:${pct}%"></div>
+                    </div>
+                    <div class="v31-pipe-foot">
+                      <span>${pct}% ${escapeHtml(t("stageCompletedRatio"))}</span>
+                      <span>${s.data.pending} ${escapeHtml(t("stagePendingQueue"))}</span>
+                      <span>${s.data.inProgress} ${escapeHtml(t("stageActiveQueue"))}</span>
+                    </div>
+                  </div>
+                  ${
+                    i < stages.length - 1
+                      ? '<div class="v31-pipe-arrow" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div>'
+                      : ""
+                  }
+                </div>
+              `;
+              }
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
+  observeRevealItems(stageGrid, ".v31-pipe-card", animateReveal);
+}
+
+function _renderSecondaryChips(stats) {
+  const items = [];
+  if (stats.needsAuth > 0) items.push({ label: t("statNeedsAuth"), value: stats.needsAuth, cls: "warn" });
+  if (stats.na > 0) items.push({ label: t("statusNotApplicable"), value: stats.na, cls: "muted" });
+  if (stats.skipped > 0) items.push({ label: t("statSkipped"), value: stats.skipped, cls: "skip" });
+  if (!items.length) return "";
+  return `<div class="v31-chips-row">${items
     .map(
       (it) => `
-    <div class="stat-card">
-      <div class="stat-label">${escapeHtml(t(it.label))}</div>
-      <div class="stat-value">${escapeHtml(String(it.value))}</div>
+    <div class="v31-chip v31-chip--${it.cls}">
+      <span class="v31-chip-val">${it.value}</span>
+      <span class="v31-chip-lbl">${escapeHtml(it.label)}</span>
     </div>
   `
     )
-    .join("");
-
-  observeRevealItems(grid, ".stat-card", animateReveal);
-
-  legend.innerHTML = `
-    <span><strong>${escapeHtml(t("pipelineLegendTitle"))}:</strong></span>
-    <span>${escapeHtml(t("dryRunBadge"))}: <strong>${stats.completed}</strong></span>
-    <span>${escapeHtml(t("benchmarkCompleted"))}: <strong>${stats.benchDone}</strong></span>
-    <span>${escapeHtml(t("optimizationCompleted"))}: <strong>${stats.optDone}</strong></span>
-  `;
-
-  const ratioText = (done, eligible) => {
-    if (!eligible) return "—";
-    return `${((done / eligible) * 100).toFixed(1)}% (${done}/${eligible})`;
-  };
-  const stageCards = [
-    { title: t("stagePanelAdaptation"), data: stats.adaptation },
-    { title: t("stagePanelBenchmark"), data: stats.benchmark },
-    { title: t("stagePanelOptimization"), data: stats.optimization },
-  ];
-  if (stageGrid) {
-    stageGrid.innerHTML = stageCards
-      .map(
-        (s) => `
-      <article class="stage-card">
-        <h3 class="stage-card-title">${escapeHtml(s.title)}</h3>
-        <div class="stage-ratio">${escapeHtml(t("stageCompletedRatio"))}: <strong>${escapeHtml(
-          ratioText(s.data.completed, s.data.eligible)
-        )}</strong></div>
-        <div class="stage-metrics">
-          <span>${escapeHtml(t("stagePendingQueue"))}: <strong>${s.data.pending}</strong></span>
-          <span>${escapeHtml(t("stageActiveQueue"))}: <strong>${s.data.inProgress}</strong></span>
-          <span>${escapeHtml(t("stageTerminal"))}: <strong>${s.data.terminal}</strong></span>
-        </div>
-      </article>
-    `
-      )
-      .join("");
-  }
-  observeRevealItems(stageGrid, ".stage-card", animateReveal);
+    .join("")}</div>`;
 }
 
 function pipeClass(st) {
@@ -1481,7 +1630,10 @@ function renderModelsPage(animateReveal) {
           <span class="${pipeClass(m.status)}">${escapeHtml(t("pipeAdapt"))}: ${escapeHtml(tStatus("adapt", m.status))}</span>
           <span class="${pipeClass(m.benchmark_status)}">${escapeHtml(t("pipeBench"))}: ${escapeHtml(tStatus("bench", m.benchmark_status))}</span>
           <span class="${pipeClass(m.optimization_status)}">${escapeHtml(t("pipeOpt"))}: ${escapeHtml(tStatus("opt", m.optimization_status))}</span>
+          <span class="${pipeClass(m.human_review_status || "")}">${escapeHtml(t("pipeHumanReview"))}: ${escapeHtml(tStatus("hr", m.human_review_status))}</span>
         </div>
+        ${renderReviewActionRow(m)}
+        ${renderSendBackRow(m)}
         ${renderBenchmarkSummary(m.benchmark_rows)}
         ${renderAccuracySummary(m.accuracy_rows)}
       </article>

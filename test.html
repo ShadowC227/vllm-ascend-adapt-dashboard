@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Dashboard Test</title></head>
+<body>
+<h3 id="s">Testing...</h3>
+<script>
+var s = document.getElementById("s");
+s.textContent = "JS works. Fetching data/board.json...";
+
+fetch("data/board.json", {cache:"no-store"})
+  .then(function(r) {
+    s.textContent = "HTTP " + r.status + ", fetching JSON...";
+    return r.json();
+  })
+  .then(function(d) {
+    s.textContent = "OK! " + (d.models||[]).length + " models, " + (d.agents||[]).length + " agents";
+    s.style.color = "green";
+  })
+  .catch(function(e) {
+    s.textContent = "ERROR: " + e.message;
+    s.style.color = "red";
+  });
+</script>
+</body>
+</html>

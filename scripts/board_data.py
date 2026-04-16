@@ -76,19 +76,53 @@ def build_board_payload(db_path: str | Path, project_url: str, *, live: bool = F
         cur.execute(
             "SELECT * FROM benchmark_results ORDER BY model_id, benchmark_stage, tensor_parallel_size"
         )
-        benchmark_results = [dict(r) for r in cur.fetchall()]
+        all_bench = [dict(r) for r in cur.fetchall()]
         benchmark_table_source = "benchmark_results"
     else:
         # 若仅有名为 benchmark 的表，仍导出为 benchmark_results 供前端使用
+        all_bench: list[dict[str, Any]] = []
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='benchmark'")
         if cur.fetchone():
             cur.execute("SELECT * FROM benchmark")
-            benchmark_results = [dict(r) for r in cur.fetchall()]
+            all_bench = [dict(r) for r in cur.fetchall()]
             benchmark_table_source = "benchmark"
+
+    # 根据模型当前阶段状态过滤：打回后不展示已重置阶段的数据
+    model_status_map = {
+        m["model_id"]: {
+            "bench": (m.get("benchmark_status") or "").strip().lower(),
+            "opt": (m.get("optimization_status") or "").strip().lower(),
+        }
+        for m in models
+    }
+    benchmark_results = []
+    for row in all_bench:
+        mid = row.get("model_id", "")
+        stage = (row.get("benchmark_stage") or "").strip().lower()
+        st = model_status_map.get(mid)
+        if not st:
+            benchmark_results.append(row)
+            continue
+        if stage == "optimized":
+            if st["opt"] == "completed":
+                benchmark_results.append(row)
+        else:
+            if st["bench"] == "completed":
+                benchmark_results.append(row)
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='accuracy_results'")
     if cur.fetchone():
         cur.execute("SELECT * FROM accuracy_results ORDER BY model_id, dataset")
-        accuracy_results = [dict(r) for r in cur.fetchall()]
+        all_acc = [dict(r) for r in cur.fetchall()]
+        accuracy_results = [
+            r for r in all_acc
+            if model_status_map.get(r.get("model_id", ""), {}).get("bench") == "completed"
+        ]
+
+    crawl_runs: list[dict[str, Any]] = []
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='crawl_runs'")
+    if cur.fetchone():
+        cur.execute("SELECT * FROM crawl_runs ORDER BY id DESC")
+        crawl_runs = [dict(r) for r in cur.fetchall()]
 
     conn.close()
 
@@ -112,6 +146,7 @@ def build_board_payload(db_path: str | Path, project_url: str, *, live: bool = F
         "models": models,
         "benchmark_results": benchmark_results,
         "accuracy_results": accuracy_results,
+        "crawl_runs": crawl_runs,
     }
 
 

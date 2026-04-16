@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Dashboard JS Test</title></head>
+<body>
+<h3 id="s">Loading dashboard.js...</h3>
+<script type="module">
+try {
+  await import("./js/dashboard.js?v=32");
+  document.getElementById("s").textContent = "dashboard.js loaded OK! boardData=" + (typeof boardData);
+  document.getElementById("s").style.color = "green";
+} catch(e) {
+  document.getElementById("s").textContent = "ERROR: " + e.message;
+  document.getElementById("s").style.color = "red";
+}
+</script>
+</body>
+</html>

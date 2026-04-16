@@ -6,11 +6,12 @@
   <title>VAA — vLLM Ascend Adaptation Board</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- SLAI 对齐：Crimson Pro 标题 + Atkinson Hyperlegible 正文；保留 Sora / JetBrains 作回退 -->
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <!-- ?v= 变更后强制浏览器拉取最新 JS/CSS，避免看不到界面更新 -->
-  <link rel="stylesheet" href="css/dashboard.css?v=17" />
+  <link rel="stylesheet" href="css/dashboard.css?v=31" />
 </head>
-<body>
+<body class="slai-theme perf-lite">
   <div class="bg-grid" aria-hidden="true"></div>
   <div class="noise-overlay" aria-hidden="true"></div>
   <header class="site-header">
@@ -44,13 +45,37 @@
         <time id="lastUpdated">—</time>
         <span id="syncStatus" class="sync-status" aria-live="polite"></span>
       </p>
+      <div id="quickStatsStrip" class="quick-stats-strip" aria-live="polite"></div>
       <div class="toolbar">
+        <label class="sort-label">
+          <span data-i18n="stageFilterLabel">阶段</span>:
+          <select id="stageFilterSelect" class="sort-select">
+            <option value="all" data-i18n="stageFilterAll">全部阶段</option>
+            <option value="adaptation" data-i18n="stageFilterAdaptation">适配阶段</option>
+            <option value="benchmark" data-i18n="stageFilterBenchmark">精度对齐阶段</option>
+            <option value="optimization" data-i18n="stageFilterOptimization">性能优化阶段</option>
+            <option value="human_review" data-i18n="stageFilterHumanReview">待人审</option>
+            <option value="done" data-i18n="stageFilterDone">全流程完成</option>
+          </select>
+        </label>
+        <label class="sort-label">
+          <span data-i18n="statusFilterLabel">状态</span>:
+          <select id="statusFilterSelect" class="sort-select">
+            <option value="all" data-i18n="statusFilterAll">全部状态</option>
+            <option value="pending" data-i18n="statusFilterPending">待处理</option>
+            <option value="in_progress" data-i18n="statusFilterInProgress">进行中</option>
+            <option value="completed" data-i18n="statusFilterCompleted">已完成</option>
+            <option value="needs_authorization" data-i18n="statusFilterNeedsAuth">需授权</option>
+            <option value="skipped" data-i18n="statusFilterSkipped">已跳过</option>
+            <option value="not_applicable" data-i18n="statusFilterNotApplicable">不适用</option>
+          </select>
+        </label>
         <label class="sort-label">
           <span data-i18n="livePollLabel">自动刷新</span>:
           <select id="pollSelect" class="sort-select" title="轮询间隔（本地实时服务推荐开启）">
             <option value="0" data-i18n="pollOff">关闭</option>
             <option value="3">3s</option>
-            <option value="5" selected>5s</option>
+            <option value="5">5s</option>
             <option value="10">10s</option>
             <option value="30">30s</option>
           </select>
@@ -68,11 +93,40 @@
           </select>
         </label>
       </div>
+      <div class="filter-summary">
+        <div class="filter-summary-left">
+          <span class="filter-summary-label" data-i18n="filterSummaryLabel">当前筛选</span>
+          <div id="activeFilterChips" class="filter-chips"></div>
+        </div>
+        <div class="filter-summary-right">
+          <span class="filter-count-label"><span id="filterResultCount" class="filter-count">0</span> <span data-i18n="filterResultLabel">个模型</span></span>
+          <button type="button" id="clearFiltersBtn" class="btn-ghost btn-clear-filter" data-i18n="clearFilters">清空筛选</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel" aria-labelledby="teamTitle">
       <h2 id="teamTitle" data-i18n="teamTitle">团队</h2>
       <p class="panel-desc" data-i18n="teamDesc">Agent 心跳与当前任务（由 board_ops heartbeat 写入）。</p>
+      <div class="team-legend" role="group" aria-label="Agent stage colors">
+        <span class="team-legend-label" data-i18n="teamLegendLabel">阶段颜色</span>
+        <span class="team-legend-pill team-legend-pill--adapt">
+          <span class="team-legend-dot" aria-hidden="true"></span>
+          <span data-i18n="teamLegendAdaptation">绿色 = 适配</span>
+        </span>
+        <span class="team-legend-pill team-legend-pill--bench">
+          <span class="team-legend-dot" aria-hidden="true"></span>
+          <span data-i18n="teamLegendBenchmark">青色 = 精度对齐</span>
+        </span>
+        <span class="team-legend-pill team-legend-pill--opt">
+          <span class="team-legend-dot" aria-hidden="true"></span>
+          <span data-i18n="teamLegendOptimization">靛蓝 = 性能优化</span>
+        </span>
+        <span class="team-legend-pill team-legend-pill--lead">
+          <span class="team-legend-dot" aria-hidden="true"></span>
+          <span data-i18n="teamLegendLead">紫色 = 团队协调</span>
+        </span>
+      </div>
       <div id="teamGrid" class="team-grid"></div>
       <p id="noAgents" class="empty-hint hidden" data-i18n="noActiveAgents">暂无 Agent 记录</p>
     </section>
@@ -80,9 +134,85 @@
     <section class="panel" aria-labelledby="statsTitle">
       <h2 id="statsTitle" data-i18n="statsTitle">统计</h2>
       <p class="panel-desc" data-i18n="statsDesc">基于当前模型列表聚合。</p>
-      <div id="statsGrid" class="stats-grid"></div>
+      <div id="statsGrid" class="stats-grid-host"></div>
       <div class="legend" id="pipelineLegend"></div>
       <div id="stageStatsGrid" class="stage-stats-grid"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="recommenderTitle">
+      <h2 id="recommenderTitle" data-i18n="recommenderTitle">配置推荐器</h2>
+      <p class="panel-desc" data-i18n="recommenderDesc">选择模型和可用芯片数，获取优化后的启动配置与环境变量。</p>
+      <div class="recommender-form">
+        <div class="recommender-field">
+          <label class="recommender-label" for="recModelInput" data-i18n="recommenderModelLabel">模型</label>
+          <div class="recommender-combobox-wrap">
+            <input
+              type="text"
+              id="recModelInput"
+              class="recommender-input"
+              list="recModelList"
+              autocomplete="off"
+              data-i18n-placeholder="recommenderModelPlaceholder"
+              placeholder="输入或选择模型..."
+            />
+            <datalist id="recModelList"></datalist>
+          </div>
+        </div>
+        <div class="recommender-field recommender-field--chips">
+          <label class="recommender-label" for="recChipCount" data-i18n="recommenderChipLabel">可用芯片</label>
+          <select id="recChipCount" class="sort-select recommender-select">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4" selected>4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+          </select>
+        </div>
+        <button type="button" id="recSubmitBtn" class="btn-recommend" data-i18n="recommenderSubmit">获取推荐</button>
+      </div>
+      <div id="recResult" class="recommender-result hidden"></div>
+      <p id="recLoading" class="loading hidden" data-i18n="loading">加载中…</p>
+      <p id="recError" class="recommender-error hidden"></p>
+
+      <div class="rec-pipeline-section">
+        <h4 class="rec-sub-title" data-i18n="recPipelineTitle">全流程适配</h4>
+        <p class="rec-pipeline-desc" data-i18n="recPipelineDesc">模型未在数据库中？启动 Agent 自动化流水线完成适配、评测和优化。</p>
+        <div class="rec-pipeline-form">
+          <div class="recommender-field">
+            <label class="recommender-label" for="recPipelineModel" data-i18n="recommenderModelLabel">模型</label>
+            <input
+              type="text"
+              id="recPipelineModel"
+              class="recommender-input"
+              autocomplete="off"
+              data-i18n-placeholder="recPipelineModelPlaceholder"
+              placeholder="HuggingFace 模型 ID (如 meta-llama/Meta-Llama-3-8B-Instruct)"
+            />
+          </div>
+          <div class="recommender-field recommender-field--chips">
+            <label class="recommender-label" for="recPipelineChips" data-i18n="recommenderChipLabel">可用芯片</label>
+            <select id="recPipelineChips" class="sort-select recommender-select">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="4" selected>4</option>
+              <option value="8">8</option>
+              <option value="16">16</option>
+            </select>
+          </div>
+          <div class="recommender-field recommender-field--mode">
+            <label class="recommender-label" for="recPipelineMode" data-i18n="recPipelineMode">模式</label>
+            <select id="recPipelineMode" class="sort-select recommender-select">
+              <option value="full" data-i18n="recPipelineModeFull">全流程</option>
+              <option value="adaptation" data-i18n="recPipelineModeAdaptation">仅适配</option>
+              <option value="benchmark" data-i18n="recPipelineModeBenchmark">仅评测</option>
+              <option value="optimization" data-i18n="recPipelineModeOptimization">仅优化</option>
+            </select>
+          </div>
+          <button type="button" id="recPipelineBtn" class="btn-pipeline" data-i18n="recPipelineSubmit">启动流水线</button>
+        </div>
+        <p id="recPipelineError" class="recommender-error hidden"></p>
+        <div id="recPipelineStatus" class="rec-pipeline-status hidden"></div>
+      </div>
     </section>
 
     <section class="panel models-section" aria-labelledby="modelsTitle">
@@ -133,6 +263,6 @@
     </div>
   </div>
 
-  <script src="js/dashboard.js?v=17" type="module"></script>
+  <script src="js/dashboard.js?v=31" type="module"></script>
 </body>
 </html>
